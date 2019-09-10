@@ -1,0 +1,205 @@
+https://mp.weixin.qq.com/s?__biz=MzUzODYwMDAzNA==&mid=2247487117&idx=2&sn=faf792007b62915415365aff320c9bac&chksm=fad47980cda3f0962e86e0fc92bc8aab6c3670ff1d2cb268a54df9d5c0d870602549b2b93c59&mpshare=1&scene=23&srcid=&sharer_sharetime=1568120408081&sharer_shareid=03a412a12914567159c8224aca66ce21#rd
+
+
+1
+
+目 标 场 景
+
+
+
+有时候女朋友一个人在外面玩耍，问她在哪个地方，就是不告诉我。但是，你又很想知道女朋友的「位置」，这该如何是好？
+
+
+
+
+
+
+
+其实你可以这样套路女朋友，假装自己在家很无聊，可以帮她修图，让她微信发原图给你，拿到「微信原图」后，你就可以利用 Python 快速获取到女友的具体位置了。
+
+
+
+2
+
+准 备 工 作
+
+
+
+首先，在虚拟环境中安装识别图片元数据的库。
+
+
+
+pip3 install exifread
+
+
+
+然后，进入高德开放平台，申请一个 Web 服务的应用，获取到一个 「Key」用于逆地理编码 API。
+
+
+
+
+
+
+
+3
+
+编  写  脚  本
+
+
+
+整个操作分为 3 步骤，分别是获取图片的经度和纬度、对经度和纬度进行数据矫正、调用高德逆地理编码 API 获取具体位置。
+
+
+
+第 1 步，获取图片的「经度和纬度」。
+
+
+
+使用 exifread 库可以直接读取图片文件，获取到图片的元数据，包含经度、纬度、南北纬方向、东西经方向和拍摄时间。
+
+
+
+# 使用 exifread 获取图片的元数据
+img_exif = exifread.process_file(open(self.img_path, 'rb'))
+
+# 能够读取到属性
+if img_exif:
+     # 纬度数
+     latitude_gps = img_exif['GPS GPSLatitude']
+
+     # N,S 南北纬方向
+     latitude_direction = img_exif['GPS GPSLatitudeRef']
+
+     # 经度数
+     longitude_gps = img_exif['GPS GPSLongitude']
+
+     # E,W 东西经方向
+     longitude_direction = img_exif['GPS GPSLongitudeRef']
+
+     # 拍摄时间
+     take_time = img_exif['EXIF DateTimeOriginal']
+
+
+如果元数据存在，然后判断拍摄时间是否合理。如果拍摄时间不在今天，那只能很遗憾地通知你，你的女朋友在向你撒谎「撒谎」。
+
+
+
+def judge_time_met(self, take_time):
+    """
+    判断拍摄时间是否是在今天
+    :param take_time:
+    :return:
+    """
+    # 拍摄时间
+    format_time = str(take_time).split(" ")[0].replace(":", "-")
+
+    # 当天日期
+    today = str(datetime.date.today())
+
+    if format_time == today:
+        return True
+    else:
+        return False
+
+if is_lie:
+        print('很遗憾的通知你，你的女朋友在撒谎！！！')
+        return
+
+
+如果女友没有撒谎，那么可以进行第 2 步的操作。
+
+
+
+因为通过 GPS 获取的经度、纬度和高德地图的坐标存在一定的误差，这里需要把坐标转换为「火星坐标系」。
+
+
+
+x_pi = 3.14159265358979324 * 3000.0 / 180.0
+pi = 3.1415926535897932384626  # π
+a = 6378245.0  # 长半轴
+ee = 0.00669342162296594323  # 扁率
+
+def wgs84togcj02(lng, lat):
+    """
+    WGS84转GCJ02(火星坐标系)
+    :param lng:WGS84坐标系的经度
+    :param lat:WGS84坐标系的纬度
+    :return:
+    """
+    if out_of_china(lng, lat):  # 判断是否在国内
+        return lng, lat
+    dlat = transformlat(lng - 105.0, lat - 35.0)
+    dlng = transformlng(lng - 105.0, lat - 35.0)
+    radlat = lat / 180.0 * pi
+    magic = math.sin(radlat)
+    magic = 1 - ee * magic * magic
+    sqrtmagic = math.sqrt(magic)
+    dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * pi)
+    dlng = (dlng * 180.0) / (a / sqrtmagic * math.cos(radlat) * pi)
+    mglat = lat + dlat
+    mglng = lng + dlng
+    return [mglng, mglat]
+
+
+另外需要注意的是，接口中经度、纬度参数只能识别小数点后 6 位，需要对经纬度中的度、分、秒做一定的数据处理，然后再进行四舍五入。
+
+
+
+def __format_lati_long_data(self, data):
+    """
+    对经度和纬度数据做处理，保留6位小数
+    :param data: 原始经度和纬度值
+    :return:
+    """
+    # 删除左右括号和空格
+    data_list_tmp = str(data).replace('[', '').replace(']', '').split(',')
+    data_list = [data.strip() for data in data_list_tmp]
+
+    # 替换秒的值
+    data_tmp = data_list[-1].split('/')
+
+    # 秒的值
+    data_sec = int(data_tmp[0]) / int(data_tmp[1]) / 3600
+
+    # 替换分的值
+    data_tmp = data_list[-2]
+
+    # 分的值
+    data_minute = int(data_tmp) / 60
+
+    # 度的值
+    data_degree = int(data_list[0])
+
+    # 由于高德API只能识别到小数点后的6位
+    # 需要转换为浮点数，并保留为6位小数
+    result = "%.6f" % (data_degree + data_minute + data_sec)
+    return float(result)
+
+
+第 3 步，调用高德的反地理编码 API，传入申请的应用 Key，就能拿到女朋友的详细地址。
+
+
+
+def __get_address(self, location):
+    """
+    根据坐标得到详细地址
+    :param location: 经纬度值
+    :return:
+    """
+    resp = requests.get(self.url_get_position.format(self.api_key, location))
+
+    location_data = json.loads(resp.text)
+
+    address = location_data.get('regeocode').get('formatted_address')
+
+    return address
+
+
+4
+
+结 果 结 论
+
+
+
+确保图片是原图的基础上，可以快速帮你判断女朋友是否在撒谎；如果女朋友没有撒谎，就返回女朋友具体的位置。
+
